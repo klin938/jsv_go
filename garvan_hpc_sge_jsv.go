@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"jsv"
 	"strings"
+	"strconv"
 	"time"
 )
 
@@ -33,11 +34,18 @@ func jsvVerificationFunction() {
 		jsv.LogInfo("JSV: " + client + "|" + job_id + "|h_rt - set default: " + SHORT_Q_RT)
 		h_rt_val = DEFAULT_RT
 	} else {
-		// convert hh:mm:ss format into seconds
-		rt_spl := strings.Split(h_rt_val, ":")
-		rt_str := rt_spl[0] + "h" + rt_spl[1] + "m" + rt_spl[2] + "s"
-		rt, _ := time.ParseDuration(rt_str)
-		var rt_seconds int = int(rt.Seconds())
+		var rt_seconds int = 0
+		// In server side JSV, any h_rt being processed by the SGE qmaster has been
+		// converted to second. In order to make it usable by both server and client
+		// side, try converting to int first, if it failed, then do the time parsing.
+		rt_seconds, err := strconv.Atoi(h_rt_val)
+		if err != nil {
+			// convert hh:mm:ss format into seconds
+			rt_spl := strings.Split(h_rt_val, ":")
+			rt_str := rt_spl[0] + "h" + rt_spl[1] + "m" + rt_spl[2] + "s"
+			rt, _ := time.ParseDuration(rt_str)
+			rt_seconds = int(rt.Seconds())
+		}
 		jsv.LogInfo("JSV: " + client + "|" + job_id + "|h_rt - user requested " + h_rt_val + "/" + fmt.Sprint(rt_seconds))
 
 		if rt_seconds > SHORT_Q_RT_SECONDS {
@@ -57,7 +65,6 @@ func jsvVerificationFunction() {
 	// the qrsh/qlogin session is terminated automatically, which no problem for us.
 	cmdname, _ := jsv.GetParam("CMDNAME")
 	if cmdname == "NONE" {
-		// existing param is overwritten automatically
 		jsv.SubAddParam("l_hard", "h_rt", h_rt_val)
 		jsv.SubAddParam("l_hard", "s_rt", s_rt_val)
 		jsv.LogInfo("JSV: " + client + "|" + job_id + "|" + cmdname + " - setting wall clock limits [ h_rt:" + h_rt_val + " | s_rt:" + s_rt_val + " ]")
@@ -68,7 +75,7 @@ func jsvVerificationFunction() {
 
 	mem_req_val, _ := jsv.SubGetParam("l_hard", "mem_requested")
 	jsv.AddEnv("mem_requested", mem_req_val)
-	// Basically we are setting a RAM quota here
+	// make sure h_vmem is the same as mem_requested
 	jsv.SubAddParam("l_hard", "h_vmem", mem_req_val)
 	jsv.LogInfo("JSV: " + client + "|" + job_id + "|" + cmdname + " - setting memory hard limit [ h_vmem:" + mem_req_val + " ]")
 	// accepting the job but indicating that we did
